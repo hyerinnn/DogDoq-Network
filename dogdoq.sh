@@ -28,46 +28,15 @@
 
 # prepending $PWD/../bin to PATH to ensure we are picking up the correct binaries
 # this may be commented out to resolve installed version of tools if desired
-export PATH=${PWD}/../bin:${PWD}:$PATH
+export PATH=${PWD}/.:${PWD}:$PATH
 export FABRIC_CFG_PATH=${PWD}
 export VERBOSE=false
 
 # Print the usage message
 function printHelp() {
-  echo "Usage: "
-  echo "  byfn.sh <mode> [-c <channel name>] [-t <timeout>] [-d <delay>] [-f <docker-compose-file>] [-s <dbtype>] [-l <language>] [-i <imagetag>] [-v]"
-  echo "    <mode> - one of 'up', 'down', 'restart', 'generate' or 'upgrade'"
-  echo "      - 'up' - bring up the network with docker-compose up"
-  echo "      - 'down' - clear the network with docker-compose down"
-  echo "      - 'restart' - restart the network"
-  echo "      - 'generate' - generate required certificates and genesis block"
-  echo "      - 'upgrade'  - upgrade the network from version 1.2.x to 1.3.x"
-  echo "    -c <channel name> - channel name to use (defaults to \"mychannel\")"
-  echo "    -t <timeout> - CLI timeout duration in seconds (defaults to 10)"
-  echo "    -d <delay> - delay duration in seconds (defaults to 3)"
-  echo "    -f <docker-compose-file> - specify which docker-compose file use (defaults to docker-compose-cli.yaml)"
-  echo "    -s <dbtype> - the database backend to use: goleveldb (default) or couchdb"
-  echo "    -l <language> - the chaincode language: golang (default) or node"
-  echo "    -i <imagetag> - the tag to be used to launch the network (defaults to \"latest\")"
-  echo "    -v - verbose mode"
-  echo "  byfn.sh -h (print this message)"
-  echo
-  echo "Typically, one would first generate the required certificates and "
-  echo "genesis block, then bring up the network. e.g.:"
-  echo
-  echo "	byfn.sh generate -c mychannel"
-  echo "	byfn.sh up -c mychannel -s couchdb"
-  echo "        byfn.sh up -c mychannel -s couchdb -i 1.2.x"
-  echo "	byfn.sh up -l node"
-  echo "	byfn.sh down -c mychannel"
-  echo "        byfn.sh upgrade -c mychannel"
-  echo
-  echo "Taking all defaults:"
-  echo "	byfn.sh generate"
-  echo "	byfn.sh up"
-  echo "	byfn.sh down"
+  echo "network up: ./dogdoq.sh up "
+  echo "network down : ./down.sh"
 }
-
 # Ask user for confirmation to proceed
 function askProceed() {
   read -p "Continue? [Y/n] " ans
@@ -134,13 +103,13 @@ function checkPrereqs() {
   for UNSUPPORTED_VERSION in $BLACKLISTED_VERSIONS; do
     echo "$LOCAL_VERSION" | grep -q $UNSUPPORTED_VERSION
     if [ $? -eq 0 ]; then
-      echo "ERROR! Local Fabric binary version of $LOCAL_VERSION does not match this newer version of BYFN and is unsupported. Either move to a later version of Fabric or checkout an earlier version of fabric-samples."
+      echo "ERROR! Local Fabric binary version of $LOCAL_VERSION does not match this newer version of DogDoq-Network and is unsupported. Either move to a later version of Fabric or checkout an earlier version of fabric-samples."
       exit 1
     fi
 
     echo "$DOCKER_IMAGE_VERSION" | grep -q $UNSUPPORTED_VERSION
     if [ $? -eq 0 ]; then
-      echo "ERROR! Fabric Docker image version of $DOCKER_IMAGE_VERSION does not match this newer version of BYFN and is unsupported. Either move to a later version of Fabric or checkout an earlier version of fabric-samples."
+      echo "ERROR! Fabric Docker image version of $DOCKER_IMAGE_VERSION does not match this newer version of DogDoq-Network and is unsupported. Either move to a later version of Fabric or checkout an earlier version of fabric-samples."
       exit 1
     fi
   done
@@ -172,89 +141,6 @@ function networkUp() {
   fi
 }
 
-# Upgrade the network components which are at version 1.2.x to 1.3.x
-# Stop the orderer and peers, backup the ledger for orderer and peers, cleanup chaincode containers and images
-# and relaunch the orderer and peers with latest tag
-# function upgradeNetwork() {
-#   if [[ "$IMAGETAG" == *"1.3"* ]] || [[ $IMAGETAG == "latest" ]]; then
-#     docker inspect -f '{{.Config.Volumes}}' orderer.example.com | grep -q '/var/hyperledger/production/orderer'
-#     if [ $? -ne 0 ]; then
-#       echo "ERROR !!!! This network does not appear to be using volumes for its ledgers, did you start from fabric-samples >= v1.2.x?"
-#       exit 1
-#     fi
-
-#     LEDGERS_BACKUP=./ledgers-backup
-
-#     # create ledger-backup directory
-#     mkdir -p $LEDGERS_BACKUP
-
-#     export IMAGE_TAG=$IMAGETAG
-#     if [ "${IF_COUCHDB}" == "couchdb" ]; then
-#       COMPOSE_FILES="-f $COMPOSE_FILE -f $COMPOSE_FILE_COUCH"
-#     else
-#       COMPOSE_FILES="-f $COMPOSE_FILE"
-#     fi
-
-#     # removing the cli container
-#     docker-compose $COMPOSE_FILES stop cli
-#     docker-compose $COMPOSE_FILES up -d --no-deps cli
-
-#     echo "Upgrading orderer"
-#     docker-compose $COMPOSE_FILES stop orderer.example.com
-#     docker cp -a orderer.example.com:/var/hyperledger/production/orderer $LEDGERS_BACKUP/orderer.example.com
-#     docker-compose $COMPOSE_FILES up -d --no-deps orderer.example.com
-
-#     for PEER in peer0.org1.example.com peer1.org1.example.com peer0.org2.example.com peer1.org2.example.com; do
-#       echo "Upgrading peer $PEER"
-
-#       # Stop the peer and backup its ledger
-#       docker-compose $COMPOSE_FILES stop $PEER
-#       docker cp -a $PEER:/var/hyperledger/production $LEDGERS_BACKUP/$PEER/
-
-#       # Remove any old containers and images for this peer
-#       CC_CONTAINERS=$(docker ps | grep dev-$PEER | awk '{print $1}')
-#       if [ -n "$CC_CONTAINERS" ]; then
-#         docker rm -f $CC_CONTAINERS
-#       fi
-#       CC_IMAGES=$(docker images | grep dev-$PEER | awk '{print $1}')
-#       if [ -n "$CC_IMAGES" ]; then
-#         docker rmi -f $CC_IMAGES
-#       fi
-
-#       # Start the peer again
-#       docker-compose $COMPOSE_FILES up -d --no-deps $PEER
-#     done
-
-#     docker exec cli scripts/upgrade_to_v13.sh $CHANNEL_NAME $CLI_DELAY $LANGUAGE $CLI_TIMEOUT $VERBOSE
-#     if [ $? -ne 0 ]; then
-#       echo "ERROR !!!! Test failed"
-#       exit 1
-#     fi
-#   else
-#     echo "ERROR !!!! Pass the v1.3.x image tag"
-#   fi
-# }
-
-# Tear down running network
-# function networkDown() {
-#   # stop org3 containers also in addition to org1 and org2, in case we were running sample to add org3
-#   docker-compose -f $COMPOSE_FILE -f $COMPOSE_FILE_COUCH -f $COMPOSE_FILE_ORG3 down --volumes --remove-orphans
-
-#   # Don't remove the generated artifacts -- note, the ledgers are always removed
-#   if [ "$MODE" != "restart" ]; then
-#     # Bring down the network, deleting the volumes
-#     #Delete any ledger backups
-#     docker run -v $PWD:/tmp/first-network --rm hyperledger/fabric-tools:$IMAGETAG rm -Rf /tmp/first-network/ledgers-backup
-#     #Cleanup the chaincode containers
-#     clearContainers
-#     #Cleanup images
-#     removeUnwantedImages
-#     # remove orderer block and other channel configuration transactions and certs
-#     rm -rf channel-artifacts/*.block channel-artifacts/*.tx crypto-config ./org3-artifacts/crypto-config/ channel-artifacts/org3.json
-#     # remove the docker-compose yaml file that was customized to the example
-#     rm -f docker-compose-e2e.yaml
-#   fi
-# }
 
 # Using docker-compose-e2e-template.yaml, replace constants with private key file names
 # generated by the cryptogen tool and output a docker-compose.yaml specific to this
@@ -340,41 +226,7 @@ function generateCerts() {
   echo
 }
 
-# The `configtxgen tool is used to create four artifacts: orderer **bootstrap
-# block**, fabric **channel configuration transaction**, and two **anchor
-# peer transactions** - one for each Peer Org.
 #
-# The orderer block is the genesis block for the ordering service, and the
-# channel transaction file is broadcast to the orderer at channel creation
-# time.  The anchor peer transactions, as the name might suggest, specify each
-# Org's anchor peer on this channel.
-#
-# Configtxgen consumes a file - ``configtx.yaml`` - that contains the definitions
-# for the sample network. There are three members - one Orderer Org (``OrdererOrg``)
-# and two Peer Orgs (``Org1`` & ``Org2``) each managing and maintaining two peer nodes.
-# This file also specifies a consortium - ``SampleConsortium`` - consisting of our
-# two Peer Orgs.  Pay specific attention to the "Profiles" section at the top of
-# this file.  You will notice that we have two unique headers. One for the orderer genesis
-# block - ``TwoOrgsOrdererGenesis`` - and one for our channel - ``TwoOrgsChannel``.
-# These headers are important, as we will pass them in as arguments when we create
-# our artifacts.  This file also contains two additional specifications that are worth
-# noting.  Firstly, we specify the anchor peers for each Peer Org
-# (``peer0.org1.example.com`` & ``peer0.org2.example.com``).  Secondly, we point to
-# the location of the MSP directory for each member, in turn allowing us to store the
-# root certificates for each Org in the orderer genesis block.  This is a critical
-# concept. Now any network entity communicating with the ordering service can have
-# its digital signature verified.
-#
-# This function will generate the crypto material and our four configuration
-# artifacts, and subsequently output these files into the ``channel-artifacts``
-# folder.
-#
-# If you receive the following warning, it can be safely ignored:
-#
-# [bccsp] GetDefault -> WARN 001 Before using BCCSP, please call InitFactories(). Falling back to bootBCCSP.
-#
-# You can ignore the logs regarding intermediate certs, we are not using them in
-# this crypto implementation.
 
 # Generate orderer genesis block, channel configuration transaction and
 # anchor peer update transactions
@@ -572,11 +424,6 @@ CHANNEL_NAME3="channel3"
 CHANNEL_NAME4="channel4"
 # use this as the default docker-compose yaml definition
 COMPOSE_FILE=docker-compose-e2e.yaml
-#
-# COMPOSE_FILE_COUCH=docker-compose-couch.yaml
-# # org3 docker compose file
-# COMPOSE_FILE_ORG3=docker-compose-org3.yaml
-# #
 # use golang as the default language for chaincode
 LANGUAGE=golang
 # default image tag
@@ -590,14 +437,8 @@ shift
 # Determine whether starting, stopping, restarting, generating or upgrading
 if [ "$MODE" == "up" ]; then
   EXPMODE="Starting"
-# elif [ "$MODE" == "down" ]; then
-#   EXPMODE="Stopping"
-# elif [ "$MODE" == "restart" ]; then
-#   EXPMODE="Restarting"
 elif [ "$MODE" == "generate" ]; then
   EXPMODE="Generating certs and genesis block"
-# elif [ "$MODE" == "upgrade" ]; then
-#   EXPMODE="Upgrading the network"
 else
   printHelp
   exit 1
@@ -637,31 +478,19 @@ while getopts "h?c:t:d:f:s:l:i:v" opt; do
 done
 
 
-# Announce what was requested
 
-if [ "${IF_COUCHDB}" == "couchdb" ]; then
-  echo
-  echo "${EXPMODE} for channel '${CHANNEL_NAME}' with CLI timeout of '${CLI_TIMEOUT}' seconds and CLI delay of '${CLI_DELAY}' seconds and using database '${IF_COUCHDB}'"
-else
-  echo "${EXPMODE} for channel '${CHANNEL_NAME}' with CLI timeout of '${CLI_TIMEOUT}' seconds and CLI delay of '${CLI_DELAY}' seconds"
-fi
 # ask for confirmation to proceed
 askProceed
 
 #Create the network using docker compose
 if [ "${MODE}" == "up" ]; then
   networkUp
-# elif [ "${MODE}" == "down" ]; then ## Clear the network
 #   networkDown
 elif [ "${MODE}" == "generate" ]; then ## Generate Artifacts
   generateCerts
   replacePrivateKey
   generateChannelArtifacts
-# elif [ "${MODE}" == "restart" ]; then ## Restart the network
-#   networkDown
-#   networkUp
-# elif [ "${MODE}" == "upgrade" ]; then ## Upgrade the network from version 1.2.x to 1.3.x
-#   upgradeNetwork
+
 else
   printHelp
   exit 1
